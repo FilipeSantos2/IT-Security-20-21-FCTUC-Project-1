@@ -1,0 +1,380 @@
+-----------------------------------------------------------------------------------------------------------------------
+													Internal Networks
+-----------------------------------------------------------------------------------------------------------------------	
+
+(Address/Netmask)
+
+Road Warrior:
+	Coimbra_to_Road_Warrior (192.168.1.1/255.255.255.0)
+		MAC: 080027F5D109 - enp0s8
+
+Gateway Coimbra:
+	Coimbra_to_Road_Warrior (192.168.1.10/255.255.255.0)
+		MAC: 080027CB7C99 - enp0s8
+
+	Internet_Network_Coimbra (192.168.10.1/255.255.255.0)
+		MAC: 0800273C9808 - enp0s9
+
+	Coimbra_to_Lisboa (192.168.20.1/255.255.255.0)
+		MAC: 080027AC3108 - enp0s10
+
+Gateway Lisboa:
+	Coimbra_to_Lisboa (192.168.20.10/255.255.255.0)
+		MAC: 080027BAE5B3 - enp0s8
+
+	Internet_Network_Lisboa (192.168.30.1/255.255.255.0)
+		MAC: 0800276EE3CE - enp0s9
+
+-----------------------------------------------------------------------------------------------------------------------
+														Cerificados
+-----------------------------------------------------------------------------------------------------------------------															
+
+Folders e ficheiros em falta
+	-Para os atributos das entidades poderem ser diferentes (neste caso -> State e Locality)
+		gedit /etc/pki/tls/openssl.cnf
+			stateOrProvinceName     = optional
+			localityName            = optional
+
+	-Permitir TLS
+		gedit /etc/pki/tls/openssl.cnf
+
+		Quando é Server:
+			keyUsage = digitalSignature, keyEncipherment
+			extendedKeyUsage = serverAuth
+		Quando é Client:
+			keyUsage = digitalSignature	
+
+	-Para usar na criação do OCSP Responder
+		[usr_cert]
+		authorityInfoAccess=OCSP;URI:http://192.168.10.1:4444
+
+		[v3_OCSP]
+		basicConstraints=CA:FALSE
+		keyUsage=nonRepudiation,digitalSignature,keyEncipherment
+		extendedKeyUsage=OCSPSigning		
+
+	-Para conseguir criar certificados através da certificate authority
+		mkdir /etc/pki/CA/newcerts
+		touch /etc/pki/CA/index.txt
+		echo 01 > /etc/pki/CA/serial
+
+Path
+	cd /etc/pki/CA
+
+Certification Authority
+	1 - openssl genrsa -des3 -out STI_CA.key
+		password: abc432
+	2 - openssl req -new -key STI_CA.key -out STI_CA.csr
+		Country: PT
+		State: Coimbra
+		Locality: Coimbra
+		Org: UC
+		Org Unit: DEI
+		Common Name: STI_CA
+		Email: fmsantos@student.dei.uc.pt
+	3 - openssl x509 -req -days 3610 -in STI_CA.csr -out STI_CA.crt -signkey STI_CA.key
+
+VPN Gateway Coimbra
+	1 - openssl genrsa -des3 -out GatewayCoimbra.key
+		password: abc432
+	2 - openssl req -new -key GatewayCoimbra.key -out GatewayCoimbra.csr
+		Country: PT
+		State: Coimbra
+		Locality: Coimbra
+		Org: UC
+		Org Unit: DEI
+		Common Name: VPN Gateway Coimbra
+		Email: fmsantos@student.dei.uc.pt
+	3 - openssl ca -in GatewayCoimbra.csr -cert STI_CA.crt -keyfile STI_CA.key -out GatewayCoimbra.crt
+
+Road Warrior
+	1 - openssl genrsa -des3 -out RW.key
+		password: abc432
+	2 - openssl req -new -key RW.key -out RW.csr
+		Country: PT
+		State: Coimbra
+		Locality: Coimbra
+		Org: UC
+		Org Unit: DEI
+		Common Name: Road Warrior
+		Email: fmsantos@student.dei.uc.pt
+	3 - openssl ca -in RW.csr -cert STI_CA.crt -keyfile STI_CA.key -out RW.crt
+
+
+VPN Gateway Lisboa	
+	1 - openssl genrsa -des3 -out GatewayLisboa.key
+		password: abc432
+	2 - openssl req -new -key GatewayLisboa.key -out GatewayLisboa.csr
+		Country: PT
+		State: Lisboa
+		Locality: Lisboa
+		Org: UC
+		Org Unit: DEI
+		Common Name: VPN Gateway Lisboa
+		Email: fmsantos@student.dei.uc.pt
+	3 - openssl ca -in GatewayLisboa.csr -cert STI_CA.crt -keyfile STI_CA.key -out GatewayLisboa.crt	
+
+OCSP Responder
+	1 - openssl genrsa -des3 -out OCSP_Responder.key
+		password: abc432
+	2 - openssl req -new -key OCSP_Responder.key -out OCSP_Responder.csr
+		Country: PT
+		State: Coimbra
+		Locality: Coimbra
+		Org: UC
+		Org Unit: DEI
+		Common Name: OCSP_Responder
+		Email: fmsantos@student.dei.uc.pt
+	3 - openssl ca -in OCSP_Responder.csr -cert STI_CA.crt -keyfile STI_CA.key -out OCSP_Responder.crt -extensions v3_OCSP	
+
+-----------------------------------------------------------------------------------------------------------------------
+														OpenVPN
+-----------------------------------------------------------------------------------------------------------------------		
+
+Mover os samples para a pasta a utilizar para as configurações
+	cd /usr/share/doc/openvpn/sample/sample-config-files
+	cp client.conf /etc/openvpn/client
+	cp server.conf /etc/openvpn/server
+
+	Apenas no VPN Gateway Coimbra
+		mkdir /etc/openvpn/server2/
+		cp /etc/openvpn/server/server.conf /etc/openvpn/server2/
+
+		mkdir /etc/openvpn/server2/ccd/
+		touch /etc/openvpn/server2/ccd/'VPN Gateway Lisboa'
+		gedit /etc/openvpn/server2/ccd/'VPN Gateway Lisboa'
+			iroute 192.168.30.0 255.255.255.0
+
+
+Chave ta (Diferente para cada túnel)
+	openvpn --genkey --secret ta.key
+Ficheiro dh (Servers GatewayCoimbra)
+	openssl dhparam -out dh2048.pem 2048
+
+VPN Gateway Coimbra
+	Coimbra - Road Warrior
+		cp /usr/lib64/openvpn/plugins/openvpn-plugin-auth-pam.so /etc/pki/CA
+
+		gedit /etc/openvpn/server/server.conf
+			local 192.168.1.10
+			port 1194
+			certificates
+				ca /etc/pki/CA/STI_CA.crt
+				cert /etc/pki/CA/GatewayCoimbra.crt
+				key /etc/pki/CA/GatewayCoimbra.key
+			dh /etc/openvpn/server/dh2048.pem
+			server 10.8.0.0 255.255.255.0
+			push "route 192.168.10.0 255.255.255.0"
+			push "route 10.7.0.0 255.255.255.0"
+			push "route 192.168.30.0 255.255.255.0"
+			tls-auth /etc/openvpn/server/ta.key 0
+
+			plugin /etc/pki/CA/openvpn-plugin-auth-pam.so /etc/pam.d/openvpn
+
+			script-security 2
+			tls-verify /etc/pki/CA/OCSP_check.sh 
+
+	Coimbra - Lisboa
+		gedit /etc/openvpn/server2/server.conf
+			local 192.168.20.1
+			port 1195
+			certificates
+				ca /etc/pki/CA/STI_CA.crt
+				cert /etc/pki/CA/GatewayCoimbra.crt
+				key /etc/pki/CA/GatewayCoimbra.key
+			dh /etc/openvpn/server2/dh2048.pem
+			server 10.7.0.0 255.255.255.0
+			push "route 192.168.10.0 255.255.255.0"
+			push "route 10.8.0.0 255.255.255.0"
+			Descomentar
+				client-config-dir /etc/openvpn/server2/ccd/
+			route 192.168.30.0 255.255.255.0
+			tls-auth /etc/openvpn/server2/ta.key 0
+
+Road Warrior
+	gedit /etc/openvpn/client/client.conf
+		remote 192.168.1.10 1194
+		certificates
+			ca /etc/pki/CA/STI_CA.crt
+			cert /etc/pki/CA/RW.crt
+			key /etc/pki/CA/RW.key
+		-Descomentar
+			remote-cert-tls server
+		tls-auth /etc/openvpn/client/ta.key 1
+		auth-user-pass
+
+VPN Gateway Lisboa		
+	gedit /etc/openvpn/client/client.conf
+		remote 192.168.20.1 1195
+		certificates
+			ca /etc/pki/CA/STI_CA.crt
+			cert /etc/pki/CA/GatewayLisboa.crt
+			key /etc/pki/CA/GatewayLisboa.key
+		-Descomentar
+			remote-cert-tls server
+		tls-auth /etc/openvpn/client/ta.key 1
+
+-----------------------------------------------------------------------------------------------------------------------
+												    Google Auth
+-----------------------------------------------------------------------------------------------------------------------	
+
+https://velenux.wordpress.com/2019/03/12/openvpn-with-google-2-factor-authentication-on-centos-7/
+https://www.howtoforge.com/securing-openvpn-with-a-one-time-password-otp-on-ubuntu
+
+	Instalar o Google Authenticator pam module (VPN Gateway Coimbra)
+		yum -y install pam-devel
+		mkdir /usr/src
+		cd /usr/src
+		yum install git
+		git clone https://github.com/google/google-authenticator-libpam
+		cd google-authenticator-libpam
+		yum install autoconf
+		yum install automake
+		yum install libtool
+		./bootstrap.sh
+		./configure
+		make && make install	
+
+	Configurar o Google Authenticator (VPN Gateway Coimbra)
+		touch /etc/pam.d/openvpn
+		gedit /etc/pam.d/openvpn
+			auth        required    /usr/local/lib/security/pam_google_authenticator.so  forward_pass
+			account     required    pam_nologin.so
+			account     include     system-auth use_first_pass
+			password    include     system-auth
+			session     include     system-auth
+
+	Gerar Link para o Google Auth (VPN Gateway Coimbra)
+		useradd -m RoadWarrior
+		echo "abc432" | passwd --stdin RoadWarrior
+		su - RoadWarrior
+		google-authenticator
+			y
+			y
+			y
+			n
+			n
+
+		useradd -m VPNGatewayLisboa
+		echo "abc432" | passwd --stdin VPNGatewayLisboa
+		su - VPNGatewayLisboa
+		google-authenticator
+			y
+			y
+			y
+			n
+			n	
+
+
+-----------------------------------------------------------------------------------------------------------------------
+													   Revoke
+-----------------------------------------------------------------------------------------------------------------------	
+
+Substituir Dummy pelo certificado pretendido
+	openssl ca -revoke Dummy.crt -keyfile STI_CA.key -cert STI_CA.crt
+
+-----------------------------------------------------------------------------------------------------------------------
+														OCSP
+-----------------------------------------------------------------------------------------------------------------------	
+
+https://kura2gurun.blogspot.com/2011/08/openvpn-howto-make-ocsp-server-using.html
+
+OCSP
+
+cp /usr/share/doc/openvpn/contrib/OCSP_check/OCSP_check.sh /etc/pki/CA/
+cd /etc/pki/CA/
+gedit OCSP_check.sh
+	ocsp_url="http://192.168.10.1:4444"
+	issuer="/etc/pki/CA/STI_CA.crt"
+	verify="/etc/pki/CA/STI_CA.crt"
+
+-----------------------------------------------------------------------------------------------------------------------
+														Extras
+-----------------------------------------------------------------------------------------------------------------------		
+
+systemctl mask firewalld
+systemctl stop firewalld
+
+-----------------------------------------------------------------------------------------------------------------------
+														Correr
+-----------------------------------------------------------------------------------------------------------------------		
+
+Open Vpn Coimbra
+	OCSP Responder (Correr na pasta /etc/pki/CA/)
+		openssl ocsp -index index.txt -port 4444 -CA STI_CA.crt -rsigner OCSP_Responder.crt -rkey OCSP_Responder.key -resp_text
+	Coimbra - Road Warrior
+		openvpn --config /etc/openvpn/server/server.conf
+	Coimbra - Lisboa
+		openvpn --config /etc/openvpn/server2/server.conf
+
+Road Warrior
+	openvpn --config /etc/openvpn/client/client.conf
+
+Open VPN Lisboa
+	openvpn --config /etc/openvpn/client/client.conf	
+
+-----------------------------------------------------------------------------------------------------------------------
+														PING
+-----------------------------------------------------------------------------------------------------------------------	
+
+Ping de uma rede interna para outra
+	ping -I IP_Interface_Origem IP_Destino
+
+	Para verificar resultados
+		tshark -i interface (tun0, tun1 é usado para receber do segundo cliente)
+
+Road Warrior - Coimbra VPN
+	ping 10.8.0.1
+
+Road Warrior - Internal Coimbra 
+	ping 192.168.10.1
+
+Road Warrior - Lisboa VPN
+	ping 10.7.0.6 (Pode não ser .6)
+
+Road Warrior - Internal Lisboa
+	ping 192.168.30.1
+
+==================================================
+
+VPN Coimbra - Road Warrior
+	ping 10.8.0.6 (Pode não ser .6)
+
+VPN Coimbra - VPN Lisboa
+	ping 10.7.0.6 (Pode não ser .6)
+
+VPN Coimbra - Internal Lisboa
+	ping 192.168.30.1
+
+==================================================
+
+Internal Coimbra - Road Warrior
+	ping -I 192.168.10.1 10.8.0.6 (Pode não ser .6)
+
+Internal Coimbra - VPN Lisboa
+	ping -I 192.168.10.1 10.7.0.6 (Pode não ser .6)
+
+Internal Coimbra - Internal Lisboa
+	ping -I 192.168.10.1 192.168.30.1 
+
+==================================================
+
+VPN Lisboa - Road Warrior
+	ping 10.8.0.6 (Pode não ser .6)
+
+VPN Lisboa - VPN Coimbra
+	ping 10.7.0.1
+
+VPN Lisboa - Internal Coimbra
+	ping 192.168.10.1
+
+==================================================
+
+Internal Lisboa - Road Warrior
+	ping -I 192.168.30.1 10.8.0.6 (Pode não ser .6)
+
+Internal Lisboa - VPN Coimbra
+	ping -I 192.168.30.1 10.7.0.1
+
+Internal Lisboa - Internal Coimbra
+	ping -I 192.168.30.1 192.168.10.1 	
